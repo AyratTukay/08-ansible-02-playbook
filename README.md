@@ -1,4 +1,4 @@
-# Домашнее задание к занятию 2 «Работа с Playbook»
+# Домашнее задание к занятию 2 «Работа с Playbook» Тукаев Айрат
 
 ## Подготовка к выполнению
 
@@ -27,3 +27,99 @@
 Приложите ссылку на ваше решение в поле "Ссылка на решение" и нажмите "Отправить решение"
 
 ---
+
+**Выполнение:**  
+
+  ![Скрин устранения ошибок](img/img1.png)  
+
+  ![Скрин --check](img/img2.png)  
+
+  ![Скрин --diff](img/img3.png)  
+
+  ![Скрин --diff 2](img/img4.png)  
+
+
+##Описание плейбука
+
+Этот плейбук выполняет установку и настройку ClickHouse и Vector на соответствующих хостах. Он скачивает необходимые пакеты, устанавливает их, настраивает конфигурационные файлы и управляет службами.  
+
+##Установка и настройка ClickHouse
+
+*Параметры*
+
+hosts: clickhouse  
+become: true  
+
+*Хэндлеры*
+
+Start clickhouse service  
+Перезапускает службу ClickHouse  
+Теги: clickhouse, start service  
+
+*Задачи*
+
+   - Get clickhouse distrib
+     Скачивает дистрибутивы ClickHouse для архитектуры AMD64
+     Теги: clickhouse, distr
+
+   - Update apt cache
+     Обновляет кэш APT
+
+   - Install clickhouse packages using dpkg
+     Устанавливает пакеты ClickHouse с использованием dpkg
+     Теги: clickhouse, distr
+     Notify: Start clickhouse service
+
+   - Flush handlers
+     Выполняет все отложенные хэндлеры
+     Теги: clickhouse, start service
+
+   - Wait for clickhouse-server to be ready
+     Ожидает, пока сервер ClickHouse станет доступен на порту 9000
+     Теги: clickhouse, wait
+
+   - Create database
+     Создает базу данных logs в ClickHouse
+     Теги: clickhouse, db
+
+##Установка и настройка Vector  
+
+*Параметры*
+
+hosts: vector  
+become: true  
+
+*Хэндлеры*
+
+Start vector service  
+Перезапускает службу Vector  
+Теги: vector, restartservice  
+
+*Задачи*
+
+   - Get vector distrib
+     Скачивает дистрибутив Vector для архитектуры AMD64
+     Теги: vector, distr
+
+   - Update apt cache
+     Обновляет кэш APT
+
+   - Install vector
+     Устанавливает пакет Vector с использованием dpkg
+     Теги: vector, distr
+
+   - Deploy vector configuration
+     Развертывает конфигурационный файл Vector с использованием шаблона Jinja2
+     Теги: vector, config
+     Notify: Start vector service
+
+   - Flush handlers
+     Выполняет все отложенные хэндлеры
+     Теги: vector, restart service
+
+*Переменные*
+
+clickhouse_version: Версия ClickHouse для установки  
+clickhouse_packages: Список пакетов ClickHouse для установки  
+vector_version: Версия Vector для установки.  
+vector_config_path: Путь для конфигурационного файла Vector  

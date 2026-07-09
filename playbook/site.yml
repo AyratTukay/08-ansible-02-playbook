@@ -7,30 +7,141 @@
       ansible.builtin.service:
         name: clickhouse-server
         state: restarted
+      tags:
+        - clickhouse
+        - start service
+
   tasks:
-    - block:
-        - name: Get clickhouse distrib
-          ansible.builtin.get_url:
-            url: "https://packages.clickhouse.com/rpm/stable/{{ item }}-{{ clickhouse_version }}.noarch.rpm"
-            dest: "./{{ item }}-{{ clickhouse_version }}.rpm"
-          with_items: "{{ clickhouse_packages }}"
-      rescue:
-        - name: Get clickhouse distrib
-          ansible.builtin.get_url:
-            url: "https://packages.clickhouse.com/rpm/stable/clickhouse-common-static-{{ clickhouse_version }}.x86_64.rpm"
-            dest: "./clickhouse-common-static-{{ clickhouse_version }}.rpm"
-    - name: Install clickhouse packages
+    - name: Get clickhouse distrib
+      ansible.builtin.get_url:
+        url: "https://packages.clickhouse.com/deb/pool/main/c/{{ item.name }}/{{ item.name }}_{{ clickhouse_version }}_{{ item.arch }}.deb"
+        dest: "/tmp/{{ item.name }}-{{ clickhouse_version }}.deb"
+        mode: '0644'
+      with_items: "{{ clickhouse_packages }}"
+      tags:
+        - clickhouse
+        - distr
+
+    - name: Update apt cache
       become: true
-      ansible.builtin.yum:
-        name:
-          - clickhouse-common-static-{{ clickhouse_version }}.rpm
-          - clickhouse-client-{{ clickhouse_version }}.rpm
-          - clickhouse-server-{{ clickhouse_version }}.rpm
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: Install clickhouse packages using dpkg
+      become: true
+      ansible.builtin.command:
+        cmd: "dpkg -i /tmp/{{ item.name }}-{{ clickhouse_version }}.deb"
+      with_items: "{{ clickhouse_packages }}"
       notify: Start clickhouse service
+
+    - name: Force systemd to reload configs
+      become: true
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
     - name: Flush handlers
-      meta: flush_handlers
+      ansible.builtin.meta: flush_handlers
+      tags:
+        - clickhouse
+        - start service
+
+    - name: Wait for clickhouse-server to be ready
+      ansible.builtin.wait_for:
+        host: localhost
+        port: 9000
+        delay: 10
+        timeout: 300
+      tags:
+        - clickhouse
+        - wait
+
     - name: Create database
       ansible.builtin.command: "clickhouse-client -q 'create database logs;'"
       register: create_db
-      failed_when: create_db.rc != 0 and create_db.rc !=82
+      failed_when: create_db.rc != 0 and create_db.rc != 82
       changed_when: create_db.rc == 0
+      tags:
+        - clickhouse
+        - db
+
+- name: Install Vector
+  hosts: vector
+  handlers:
+    - name: Start vector service
+      become: true
+      ansible.builtin.systemd:
+        name: vector
+        state: restarted
+        enabled: true
+      tags:
+        - vector
+        - restart service
+
+  tasks:
+    - name: Get vector distrib
+      become: true
+      ansible.builtin.get_url:
+        url: "https://packages.timber.io/vector/{{ vector_version }}/vector_{{ vector_version }}-1_amd64.deb"
+        dest: "/tmp/vector-{{ vector_version }}.deb"
+        mode: '0644'
+      tags:
+        - vector
+        - distr
+
+    - name: Update apt cache
+      become: true
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: Install vector
+      become: true
+      ansible.builtin.command:
+        cmd: "dpkg -i /tmp/vector-{{ vector_version }}.deb"
+      changed_when: false
+      tags:
+        - vector
+        - distr
+
+    - name: Force systemd to reload configs
+      become: true
+      ansible.builtin.systemd:
+        daemon_reload: true
+      tags:
+        - vector
+
+    - name: Deploy vector configuration
+      become: true
+      ansible.builtin.template:
+        src: templates/vector.yaml.j2
+        dest: "{{ vector_config_path }}"
+        mode: '0644'
+      tags:
+        - vector
+        - config
+
+    - name: Ensure vector data directory exists with correct permissions
+      become: true
+      ansible.builtin.file:
+        path: /var/lib/vector
+        state: directory
+        owner: vector
+        group: vector
+        mode: '0755'
+      tags:
+        - vector
+
+    # Шаг 2: Проверяем конфигурацию на синтаксические ошибки перед перезапуском
+    - name: Validate Vector configuration
+      become: true
+      ansible.builtin.command:
+        cmd: "vector validate {{ vector_config_path }}"
+      changed_when: false
+      tags:
+        - vector
+        - config
+
+    - name: Flush handlers
+      ansible.builtin.meta: flush_handlers
+      tags:
+        - vector
+        - restart service
